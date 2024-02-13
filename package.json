@@ -1,0 +1,6 @@
+{
+    "name": "star-rail-relic-drop-calc",
+    "version": "1.0.0",
+    "description": "A tool to calculate the drop chance of relics in Star Rail",
+    "type": "module"
+}

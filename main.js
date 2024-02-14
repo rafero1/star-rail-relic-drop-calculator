@@ -1,6 +1,7 @@
 import {
   calculateNewSubstatProbability,
   relicProbabilityGivenNumberOfRuns,
+  relicRunsGivenProbability,
 } from "./relicMath.js";
 import { MAX_DAILY_RUNS } from "./constants.js";
 
@@ -37,6 +38,29 @@ function experimentDomainRun(experimentData) {
   });
 }
 
+function experimentNumberOfRuns(experimentData) {
+  experimentData.forEach((calc) => {
+    const results = relicRunsGivenProbability(
+      calc.slot,
+      calc.mainStat,
+      calc.substats,
+      calc.targetProbability
+    );
+
+    console.log(
+      `at least 1 ${calc.mainStat} ${calc.slot} with ${
+        calc.substats === undefined || calc.substats.length == 0
+          ? "any"
+          : calc.substats.join(" / ")
+      } subs with ${calc.targetProbability.toFixed(5) * 100}% probability = ${
+        results.runs
+      } runs (${results.staminaCost} stamina, or ${
+        results.staminaCost / MAX_DAILY_RUNS
+      } days)`
+    );
+  });
+}
+
 // experimentNewSub([
 //   { mainStat: "atk", has: ["cd"], wants: "spd" },
 //   { mainStat: "atk", has: ["spd"], wants: "cd" },
@@ -67,4 +91,13 @@ experimentDomainRun([
   //   substats: ["cr", "atk", "spd"],
   //   runs: MAX_DAILY_RUNS * 7,
   // },
+]);
+
+experimentNumberOfRuns([
+  {
+    slot: "head",
+    mainStat: "rhp",
+    substats: ["hp", "def"],
+    targetProbability: 0.75,
+  },
 ]);

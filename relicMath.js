@@ -23,29 +23,24 @@ const removeKeys = (obj, excludedKeys) => {
 };
 
 /**
- * Get the normalized substat probability table object with the main stat and chosen substats removed.
- * This is helpful to get an updated weight table of candidate substats for a relic.
- */
-const getNormalizedCandidateSubstatsTable = (mainStat, substats) =>
-  normalize(
-    removeKeys(SUBSTAT_PROBABILITY_TABLE, Array.from(substats).concat(mainStat))
-  );
-
-/**
  * Calculate the probability of a gold relic rolling a new substat, given its main stat and current substats.
+ * The formula is the weight of the new substat divided by the sum of the weights of all possible substat candidates.
+ * Substat candidates are all substats except the main stat and the current substats.
  * @param {string} mainStat - The main stat of the relic
  * @param {string[]} substats - The substats of the relic. Must be an array of up to 3 unique substats and different from the main stat.
  * @param {string} desiredSubstat - The desired substat to roll
  * @returns The probability of rolling the desired substat.
  */
 const calculateNewSubstatProbability = (mainStat, substats, desiredSubstat) =>
-  getNormalizedCandidateSubstatsTable(mainStat, substats)[desiredSubstat];
+  normalize(removeKeys(SUBSTAT_PROBABILITY_TABLE, [...substats, mainStat]))[
+    desiredSubstat
+  ];
 
 /**
- * Calculate the probability of a certain gold relic rolling a certain main stat and substats.
- * @param {string} slot - The slot of the relic
- * @param {string} mainStat - The main stat of the relic
- * @param {string[]} substats - The substats of the relic. Must be an array of up to 4 unique substats and different from the main stat.
+ * Calculate the probability of a certain gold relic rolling a certain main stat and substats combination.
+ * @param {string} slot - The desired slot of the relic
+ * @param {string} mainStat - The desired main stat of the relic
+ * @param {string[]} substats - The desired substats of the relic. Must be an array of up to 4 unique substats and different from the main stat.
  */
 const calculateGoldRelicProbability = (slot, mainStat, substats) => {
   if (substats.length > MAX_SUBSTATS) {
@@ -62,13 +57,19 @@ const calculateGoldRelicProbability = (slot, mainStat, substats) => {
   let probability = normalize(MAINSTAT_PROBABILITY_TABLE[slot])[mainStat];
 
   // exclude the main stat from the substat candidates
-  let substatCandidates = getNormalizedCandidateSubstatsTable(mainStat, []);
+  let substatCandidates = normalize(
+    removeKeys(SUBSTAT_PROBABILITY_TABLE, [mainStat])
+  );
 
   // Then calculate the probability of each substat being rolled
   // exclude them from the substat candidates as we go so they don't get rolled again
+  let totalProbabilitySoFar = 0;
   for (let substat of substats) {
-    probability *= substatCandidates[substat];
-    substatCandidates = normalize(removeKeys(substatCandidates, [mainStat]));
+    let substatProbability =
+      substatCandidates[substat] / (1 - totalProbabilitySoFar);
+    probability *= substatProbability;
+    totalProbabilitySoFar += substatCandidates[substat];
+    substatCandidates = normalize(removeKeys(substatCandidates, [substat]));
   }
 
   const remainingSlots = MAX_SUBSTATS - substats.length;
@@ -78,40 +79,40 @@ const calculateGoldRelicProbability = (slot, mainStat, substats) => {
   }
 
   // Recursive function to calculate the probability of any combination of substats
-  function calculateRemainingProbability(candidates, numSlots) {
-    // Base case: no more slots to fill
-    if (numSlots === 0) {
+  const calculateRemainingProbability = (
+    substatCandidates,
+    remainingSlots,
+    totalProbabilitySoFar = 0
+  ) => {
+    if (remainingSlots === 0) {
       return 1;
-    }
-
-    // Base case: no more candidates but still slots to fill
-    if (Object.keys(candidates).length === 0) {
-      return 0;
     }
 
     let totalProbability = 0;
 
-    // Iterate over each candidate substat
-    for (let substat in candidates) {
-      // Calculate the probability of this substat
-      let probability = candidates[substat];
-
-      // Calculate the remaining candidates excluding this substat
-      let remainingCandidates = normalize(removeKeys(candidates, [substat]));
-
-      // Multiply the probability of this substat by the probability of the remaining substats
+    for (let substat in substatCandidates) {
+      let substatProbability =
+        substatCandidates[substat] / (1 - totalProbabilitySoFar);
+      let newSubstatCandidates = normalize(
+        removeKeys(substatCandidates, [substat])
+      );
       totalProbability +=
-        probability *
-        calculateRemainingProbability(remainingCandidates, numSlots - 1);
+        substatProbability *
+        calculateRemainingProbability(
+          newSubstatCandidates,
+          remainingSlots - 1,
+          totalProbabilitySoFar + substatCandidates[substat]
+        );
     }
 
     return totalProbability;
-  }
+  };
 
   // Calculate the probability of any combination of substats being rolled in the remaining slots
   let pRemaining = calculateRemainingProbability(
     substatCandidates,
-    remainingSlots
+    remainingSlots,
+    totalProbabilitySoFar
   );
 
   // Multiply the probability of the specific substats by the probability of any combination of substats being rolled in the remaining slots
@@ -119,6 +120,8 @@ const calculateGoldRelicProbability = (slot, mainStat, substats) => {
 
   return probability;
 };
+
+const generateRandomGoldRelic = () => {};
 
 /**
  * Calculate the probability of at least one relic dropping from the correct set, given a desired main stat and substats combination and a certain amount of runs.
@@ -158,4 +161,41 @@ function relicProbabilityGivenNumberOfRuns(slot, mainStat, substats, runs) {
   return { finalProbability, stamCost };
 }
 
-export { calculateNewSubstatProbability, relicProbabilityGivenNumberOfRuns };
+/**
+ * Calculate the expected number of runs to have a target probability of getting a relic with the desired stats.
+ * @param {*} slot
+ * @param {*} mainStat
+ * @param {*} substats
+ * @param {*} targetProbability
+ * @returns
+ */
+function relicRunsGivenProbability(
+  slot,
+  mainStat,
+  substats,
+  targetProbability
+) {
+  let runs = 0;
+  let probability = 0;
+  let staminaCost = 0;
+
+  while (probability < targetProbability) {
+    runs++;
+    const results = relicProbabilityGivenNumberOfRuns(
+      slot,
+      mainStat,
+      substats,
+      runs
+    );
+    probability = results.finalProbability;
+    staminaCost = results.stamCost;
+  }
+
+  return { runs, staminaCost };
+}
+
+export {
+  calculateNewSubstatProbability,
+  relicProbabilityGivenNumberOfRuns,
+  relicRunsGivenProbability,
+};
